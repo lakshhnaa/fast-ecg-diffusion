@@ -1,53 +1,44 @@
-
 import torch
-import torch.nn as nn
+from tqdm import tqdm
 
 
-class Diffusion1D:
-    def __init__(self, model, timesteps=1000, beta_start=1e-4, beta_end=0.02, device="cpu"):
+class Trainer:
+    def __init__(self, model, diffusion, dataloader, optimizer, device="cpu"):
         self.model = model
-        self.timesteps = timesteps
+        self.diffusion = diffusion
+        self.dataloader = dataloader
+        self.optimizer = optimizer
         self.device = device
+        self.mse = torch.nn.MSELoss()
 
-        # Beta schedule
-        self.beta = torch.linspace(beta_start, beta_end, timesteps).to(device)
-        self.alpha = 1.0 - self.beta
-        self.alpha_bar = torch.cumprod(self.alpha, dim=0)
+    def train(self, epochs):
+        self.model.train()
 
-    def add_noise(self, x0, t):
-        """
-        Forward diffusion: add noise at timestep t
-        """
-        noise = torch.randn_like(x0)
+        for epoch in range(epochs):
+            epoch_loss = 0
 
-        alpha_bar_t = self.alpha_bar[t].view(-1, 1, 1)
-        noisy = torch.sqrt(alpha_bar_t) * x0 + torch.sqrt(1 - alpha_bar_t) * noise
+            pbar = tqdm(self.dataloader)
+            for noisy, clean in pbar:
+                clean = clean.to(self.device)
 
-        return noisy, noise
+                batch_size = clean.shape[0]
+                t = torch.randint(
+                    0, self.diffusion.timesteps,
+                    (batch_size,),
+                    device=self.device
+                ).long()
 
-    def sample(self, shape):
-        """
-        Reverse diffusion sampling (slow DDPM version)
-        """
-        x = torch.randn(shape).to(self.device)
+                noisy_input, noise = self.diffusion.add_noise(clean, t)
 
-        for t in reversed(range(self.timesteps)):
-            t_tensor = torch.full((shape[0],), t, device=self.device, dtype=torch.long)
+                predicted_noise = self.model(noisy_input, t)
 
-            predicted_noise = self.model(x, t_tensor)
+                loss = self.mse(predicted_noise, noise)
 
-            alpha_t = self.alpha[t]
-            alpha_bar_t = self.alpha_bar[t]
-            beta_t = self.beta[t]
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
-            if t > 0:
-                noise = torch.randn_like(x)
-            else:
-                noise = torch.zeros_like(x)
+                epoch_loss += loss.item()
+                pbar.set_description(f"Epoch {epoch+1} | Loss: {loss.item():.4f}")
 
-            x = (
-                1 / torch.sqrt(alpha_t)
-            ) * (x - ((1 - alpha_t) / torch.sqrt(1 - alpha_bar_t)) * predicted_noise) \
-                + torch.sqrt(beta_t) * noise
-
-        return x
+            print(f"Epoch {epoch+1} Average Loss: {epoch_loss/len(self.dataloader):.4f}")

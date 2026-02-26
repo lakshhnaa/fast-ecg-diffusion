@@ -12,7 +12,7 @@ The denoised ECG (green) closely matches the clean ECG while significantly reduc
 
 ### Training Loss Curve
 
-![Loss Curve](loss_curve(1).png)
+![Loss Curve](losscurve.png)
 
 The loss decreases steadily during training, indicating successful learning.
 

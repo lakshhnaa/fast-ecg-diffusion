@@ -26,3 +26,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    torch.save(model.state_dict(), "ecg_diffusion_model.pth")
+print("Model saved successfully!")
